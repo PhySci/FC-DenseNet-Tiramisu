@@ -1,8 +1,9 @@
 from __future__ import division
-import os,time,cv2
+import os, time, cv2
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
 import numpy as np
+
 
 def preact_conv(inputs, n_filters, filter_size=[3, 3], dropout_p=0.2):
     """
@@ -77,15 +78,20 @@ def TransitionUp(block_to_upsample, skip_connection, n_filters_keep, scope=None)
     return l
 
 
-def build_fc_densenet(inputs, preset_model='FC-DenseNet56', num_classes=12, n_filters_first_conv=48, n_pool=5, growth_rate=12, n_layers_per_block=4, dropout_p=0.2, scope=None):
+def build_fc_densenet(inputs, preset_model='FC-DenseNet56', num_classes=12, n_filters_first_conv=48, n_pool=5,
+                      growth_rate=12, n_layers_per_block=4, dropout_p=0.2, scope=None):
     """
-    Args:
-      n_classes: number of classes
-      n_filters_first_conv: number of filters for the first convolution applied
-      n_pool: number of pooling layers = number of transition down = number of transition up
-      growth_rate: number of new feature maps created by each layer in a dense block
-      n_layers_per_block: number of layers per block. Can be an int or a list of size 2 * n_pool + 1
-      dropout_p: dropout rate applied after each convolution (0. for not using)
+
+    :param inputs:
+    :param preset_model:
+    :param num_classes: number of classes
+    :param n_filters_first_conv: number of filters for the first convolution applied
+    :param n_pool: number of pooling layers = number of transition down = number of transition up
+    :param growth_rate: number of new feature maps created by each layer in a dense block
+    :param n_layers_per_block: number of layers per block. Can be an int or a list of size 2 * n_pool + 1
+    :param dropout_p: dropout rate applied after each convolution (0. for not using)
+    :param scope:
+    :return:
     """
 
     if preset_model == 'FC-DenseNet56':

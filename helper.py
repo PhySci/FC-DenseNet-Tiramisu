@@ -1,6 +1,3 @@
-from __future__ import absolute_import
-from __future__ import print_function
-
 import cv2
 import numpy as np
 import itertools
@@ -8,6 +5,7 @@ import operator
 
 from helper import *
 import os
+
 
 def one_hot_it(labels):
     w = labels.shape[0]
@@ -17,6 +15,7 @@ def one_hot_it(labels):
         for j in range(0, h):
             x[i,j,labels[i][j]]=1
     return x
+
 
 def reverse_one_hot(image):
     w = image.shape[0]
