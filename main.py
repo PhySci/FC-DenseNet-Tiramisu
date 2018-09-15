@@ -4,12 +4,13 @@ import tensorflow.contrib.slim as slim
 import numpy as np
 import time, datetime
 
-from .helper import *
-from .utils import *
+from utils import *
 
 import matplotlib.pyplot as plt
 
-from .FC_DenseNet_Tiramisu import build_fc_densenet
+from FC_DenseNet_Tiramisu import build_fc_densenet
+
+from gen import  Fib
 
 def count_params():
     """
@@ -36,19 +37,12 @@ def prepare_data(dataset_dir="CamVid"):
     :param dataset_dir:
     :return:
     """
-    train_input_names=[]
-    train_output_names=[]
     val_input_names=[]
     val_output_names=[]
     test_input_names=[]
     test_output_names=[]
-    for file in os.listdir(dataset_dir + "/train"):
-        cwd = os.getcwd()
-        train_input_names.append(cwd + "/" + dataset_dir + "/train/" + file)
+    print(os.listdir('.'))
 
-    for file in os.listdir(dataset_dir + "/train_labels"):
-        cwd = os.getcwd()
-        train_output_names.append(cwd + "/" + dataset_dir + "/train_labels/" + file)
 
     for file in os.listdir(dataset_dir + "/val"):
         cwd = os.getcwd()
@@ -65,28 +59,30 @@ def prepare_data(dataset_dir="CamVid"):
     for file in os.listdir(dataset_dir + "/test_labels"):
         cwd = os.getcwd()
         test_output_names.append(cwd + "/" + dataset_dir + "/test_labels/" + file)
-    return train_input_names,train_output_names, val_input_names, val_output_names, test_input_names, test_output_names
+    return val_input_names, val_output_names, test_input_names, test_output_names
 
 
 if __name__ == '__main__':
 
+    num_epochs = 250
     # Load the data
     print("Loading the data ...")
-    train_input_names, train_output_names, val_input_names, val_output_names, test_input_names, test_output_names = prepare_data()
+    val_input_names, val_output_names, test_input_names, test_output_names = prepare_data()
 
 
     print("Setting up training procedure ...")
-    inp = tf.placeholder(tf.float32, shape=[None, None, None, 3])
-    out = tf.placeholder(tf.float32, shape=[None, None, None, 12])
+    img_size = [352, 480]
+    input = tf.placeholder(tf.float32, shape=[None, img_size[0], img_size[1], 3])
+    output = tf.placeholder(tf.float32, shape=[None, img_size[0], img_size[1], 12])
 
-    network = build_fc_densenet(inp, preset_model='FC-DenseNet103')
-    loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=network, labels=out))
+    network = build_fc_densenet(input, preset_model='FC-DenseNet103')
+    loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=network, labels=output))
 
     opt = tf.train.RMSPropOptimizer(learning_rate=0.001, decay=0.995).\
                    minimize(loss, var_list=[var for var in tf.trainable_variables()]) # Зачем это здесь?
 
     is_training = True
-    num_epochs = 250
+
     continue_training = False
     class_names_string = "Sky, Building, Pole, Road, Pavement, Tree, SignSymbol, Fence, Car, Pedestrian, Bicyclist, Unlabelled"
     class_names_list = ["Sky", "Building", "Pole", "Road", "Pavement", "Tree", "SignSymbol", "Fence", "Car", "Pedestrian", "Bicyclist", "Unlabelled"]
@@ -107,39 +103,24 @@ if __name__ == '__main__':
 
     avg_scores_per_epoch = []
 
+
     if is_training:
         print("***** Begin training *****")
         avg_loss_per_epoch = []
         # Do the training here
         for epoch in range(0, num_epochs):
             current_losses = []
-            input_image_names = [None]*len(train_input_names)
-            output_image_names = [None]*len(train_input_names)
 
             cnt=0
-            for id in np.random.permutation(len(train_input_names)):
-                st = time.time()
-                if input_image_names[id] is None:
-                    input_image_names[id] = train_input_names[id]
-                    output_image_names[id] = train_output_names[id]
-                    input_image = np.expand_dims(np.float32(cv2.imread(input_image_names[id],-1)[:352, :480]),axis=0)/255.0
-                    output_image = np.expand_dims(np.float32(one_hot_it(labels=cv2.imread(output_image_names[id],-1)[:352, :480])), axis=0)
+            for images, mask in  Fib(img_pth='./CamVid/train', mask_pth='./CamVid/train_labels', batch_size=2, shape=[352, 480]):
 
-                    # ***** THIS CAUSES A MEMORY LEAK AS NEW TENSORS KEEP GETTING CREATED *****
-                    # input_image = tf.image.crop_to_bounding_box(input_image, offset_height=0, offset_width=0,
-                    # 												target_height=352, target_width=480).eval(session=sess)
-                    # output_image = tf.image.crop_to_bounding_box(output_image, offset_height=0, offset_width=0,
-                    # 												target_height=352, target_width=480).eval(session=sess)
-                    # ***** THIS CAUSES A MEMORY LEAK AS NEW TENSORS KEEP GETTING CREATED *****
-
-                    # memory()
-
-                    _, current = sess.run([opt, loss], feed_dict={input: input_image, output: output_image})
-                    current_losses.append(current)
-                    cnt = cnt + 1
-                    if cnt % 20 == 0:
-                        string_print = "Epoch = %d Count = %d Current = %.2f Time = %.2f"%(epoch,cnt,current,time.time()-st)
-                        LOG(string_print)
+                _, current = sess.run([opt, loss], feed_dict={input: images, output: mask})
+                print(current)
+                current_losses.append(current)
+                cnt = cnt + 1
+                if cnt % 20 == 0:
+                    string_print = "Epoch = %d Count = %d Current = %.2f Time = %.2f"%(epoch,cnt,current,time.time()-st)
+                    LOG(string_print)
 
             mean_loss = np.mean(current_losses)
             avg_loss_per_epoch.append(mean_loss)
