@@ -57,7 +57,7 @@ class Fib:
             raise StopIteration
         self.i +=1
 
-        return images, mask
+        return images, mask, file_list
 
 def one_hot_it(labels):
     """

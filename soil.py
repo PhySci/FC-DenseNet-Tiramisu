@@ -39,13 +39,53 @@ def get_mask(mask):
         msk_list.append(cls_msk)
     return tf.transpose(tf.stack(values=msk_list, axis=0, name='concat'), perm=[1, 2, 3, 0])
 
-if __name__ == '__main__':
 
+def predict(img_size=[128, 128]):
+    class_dict = {0: "Negative",
+                  1: "Positive"}
+
+    n_classes = len(class_dict)
+
+    print("Setting up training procedure ...")
+
+    inp = tf.placeholder(tf.float32, shape=[None, img_size[0], img_size[1], 3], name='input_images')
+
+    network = build_fc_densenet(inp, preset_model='FC-DenseNet56', n_classes=2)
+    labels = tf.argmax(network, axis=3)
+
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    sess = tf.Session(config=config)
+
+    saver = tf.train.Saver(max_to_keep=1000)
+    sess.run(tf.global_variables_initializer())
+
+    print('Loaded latest model checkpoint')
+    saver.restore(sess, "checkpoints/latest_model.ckpt")
+
+    # graph = tf.Graph()
+    # with graph.as_default():
+
+    print("***** Begin prediction *****")
+    for i, (images, _, file_list) in enumerate(Fib(img_pth='./soil/train/images',
+                                           batch_size=8, shape=[128, 128], padding=[13, 14, 13, 14])):
+        out = sess.run(labels, feed_dict={inp: images})
+
+        for i, file_name in enumerate(file_list):
+            cv2.imwrite(file_name+'.png', out[i, :, :]*65535)
+
+
+if __name__ == '__main__':
+    #train()
+    predict()
+
+
+def train(img_size=[128, 128]):
     num_epochs = 250
-    img_size = [128, 128]
 
     class_dict = {0: "Negative",
                   1: "Positive"}
+
     n_classes = len(class_dict)
 
     print("Setting up training procedure ...")
@@ -53,17 +93,14 @@ if __name__ == '__main__':
     inp = tf.placeholder(tf.float32, shape=[None, img_size[0], img_size[1], 3], name='input_images')
     labels = tf.placeholder(dtype=tf.int8, shape=[None, img_size[0], img_size[1]], name='labels')
 
-    network = build_fc_densenet(inp, preset_model='FC-DenseNet56')
+    network = build_fc_densenet(inp, preset_model='FC-DenseNet56', n_classes=n_classes)
     ohe = get_mask(labels)
     loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=network, labels=ohe))
     opt = tf.train.RMSPropOptimizer(learning_rate=0.001, decay=0.995).minimize(loss)
     tf_metric, tf_metric_update = tf.metrics.mean_iou(labels, tf.argmax(network, axis=3), name="iou", num_classes=n_classes)
 
     is_training = True
-
     continue_training = False
-
-
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
     sess = tf.Session(config=config)
@@ -84,83 +121,32 @@ if __name__ == '__main__':
     running_vars_initializer = tf.variables_initializer(var_list=running_vars)
 
 
-    if is_training:
-        print("***** Begin training *****")
-        avg_loss_per_epoch = []
-        # Do the training here
-        for epoch in range(0, num_epochs):
-            current_losses = []
-            sess.run(running_vars_initializer)
-            for i, (images, mask) in enumerate(Fib(img_pth='./soil/train/images', mask_pth='./soil/train/masks',
-                                    batch_size=8, shape=[128, 128], padding=[13, 14, 13, 14])):
-                _, l = sess.run([opt, loss], feed_dict={inp: images, labels: mask})
-                current_losses.append(l)
-                print(i, '/500:', l)
+    print("***** Begin training *****")
+    avg_loss_per_epoch = []
+    # Do the training here
+    for epoch in range(0, num_epochs):
+        current_losses = []
+        sess.run(running_vars_initializer)
+        for i, (images, mask) in enumerate(Fib(img_pth='./soil/train/images', mask_pth='./soil/train/masks',
+                                batch_size=8, shape=[128, 128], padding=[13, 14, 13, 14])):
+            _, l = sess.run([opt, loss], feed_dict={inp: images, labels: mask})
+            current_losses.append(l)
+            print(i, '/500:', l)
 
-                # estimate quality
-                #sess.run(tf_metric_update, feed_dict={inp: images, labels: mask})
-                #score = sess.run(tf_metric)
-                #print("[TF] SCORE: ", score)
+            # estimate quality
+            #sess.run(tf_metric_update, feed_dict={inp: images, labels: mask})
+            #score = sess.run(tf_metric)
+            #print("[TF] SCORE: ", score)
 
-            mean_loss = np.mean(current_losses)
-            avg_loss_per_epoch.append(mean_loss)
-            print(f'Epoch {epoch}: {mean_loss}')
-
-            # Create directories if needed
-            if not os.path.isdir("%s/%04d" % ("checkpoints", epoch)):
-                os.makedirs("%s/%04d" % ("checkpoints", epoch))
-
-            saver.save(sess, "%s/latest_model.ckpt" % "checkpoints")
-            saver.save(sess, "%s/%04d/model.ckpt" % ("checkpoints", epoch))
-
-    else:
-        print("***** Begin testing *****")
+        mean_loss = np.mean(current_losses)
+        avg_loss_per_epoch.append(mean_loss)
+        print(f'Epoch {epoch}: {mean_loss}')
 
         # Create directories if needed
-        if not os.path.isdir("%s"%("Test")):
-                os.makedirs("%s"%("Test"))
+        if not os.path.isdir("%s/%04d" % ("checkpoints", epoch)):
+            os.makedirs("%s/%04d" % ("checkpoints", epoch))
 
-        target=open("%s/test_scores.txt"%("Test"),'w')
-        target.write("test_name, avg_accuracy, %s\n" % (class_names_string))
-        scores_list = []
-        class_scores_list = []
+        saver.save(sess, "%s/latest_model.ckpt" % "checkpoints")
+        saver.save(sess, "%s/%04d/model.ckpt" % ("checkpoints", epoch))
+        #@TODO add validation
 
-        # Run testing on ALL test images
-        for ind in range(len(test_input_names)):
-            input_image = np.expand_dims(np.float32(cv2.imread(test_input_names[ind],-1)[:352, :480]),axis=0)/255.0
-            st = time.time()
-            output_image = sess.run(network, feed_dict={inp:input_image})
-
-
-            output_image = np.array(output_image[0,:,:,:])
-            output_image = reverse_one_hot(output_image)
-            out2 = output_image
-            output_image = colour_code_segmentation(output_image)
-
-            gt = cv2.imread(test_output_names[ind],-1)[:352, :480]
-
-            accuracy = compute_avg_accuracy(out2, gt)
-            class_accuracies = compute_class_accuracies(out2, gt)
-            file_name = filepath_to_name(test_input_names[ind])
-            target.write("%s, %f"%(file_name, accuracy))
-            for item in class_accuracies:
-                target.write(", %f"%(item))
-            target.write("\n")
-
-            scores_list.append(accuracy)
-            class_scores_list.append(class_accuracies)
-
-            gt = colour_code_segmentation(np.expand_dims(gt, axis=-1))
-
-            cv2.imwrite("%s/%s_pred.png"%("Test", file_name),np.uint8(output_image))
-            cv2.imwrite("%s/%s_gt.png"%("Test", file_name),np.uint8(gt))
-
-
-        target.close()
-
-        avg_score = np.mean(scores_list)
-        class_avg_scores = np.mean(class_scores_list, axis=0)
-        print("Average test accuracy = ", avg_score)
-        print("Average per class test accuracies = \n")
-        for index, item in enumerate(class_avg_scores):
-            print("%s = %f" % (class_dict.get(index), item))
