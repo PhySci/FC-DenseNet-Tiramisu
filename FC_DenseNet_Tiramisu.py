@@ -4,6 +4,12 @@ import tensorflow as tf
 import tensorflow.contrib.slim as slim
 import numpy as np
 
+class Tiramisu:
+
+    def __init__(self, num_classes=2, img_size=[256, 256]):
+        self.num_classes = num_classes
+        self.img_size = img_size
+        pass
 
 def preact_conv(inputs, n_filters, filter_size=[3, 3], dropout_p=0.2):
     """
@@ -77,9 +83,8 @@ def TransitionUp(block_to_upsample, skip_connection, n_filters_keep, scope=None)
     l = tf.concat([l, skip_connection], axis=-1)
     return l
 
-
 def build_fc_densenet(inputs, preset_model='FC-DenseNet56', num_classes=12, n_filters_first_conv=48, n_pool=5,
-                      growth_rate=4, n_layers_per_block=4, dropout_p=0.2, scope=None):
+                      growth_rate=4, n_layers_per_block=4, dropout_p=0.2, scope=None, n_classes=12):
     """
 
     :param inputs:
@@ -114,6 +119,7 @@ def build_fc_densenet(inputs, preset_model='FC-DenseNet56', num_classes=12, n_fi
     else:
         raise ValueError
 
+    #convert mask
     with tf.variable_scope(scope, preset_model, [inputs]) as sc:
 
       #####################

@@ -1,4 +1,3 @@
-from __future__ import print_function
 import os,time,cv2, sys, math
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
@@ -14,13 +13,6 @@ def filepath_to_name(full_name):
     file_name = os.path.splitext(file_name)[0]
     return file_name
 
-# Print with time
-def LOG(X, f=None):
-	time_stamp = datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-	if not f:
-		print(time_stamp + " " + X)
-	else:
-		f.write(time_stamp + " " + X)
 
 # Replaces a select value in an array with a new value
 def replace_val_in_array(input_array, original_val, replace_val = sys.maxsize - 1):
@@ -89,48 +81,20 @@ def memory():
     print('memory use:', memoryUse)
 
 
-def one_hot_it(labels):
-    """
-    Какой же пиздец. Надо как-то это переварить и переписать
-    :param labels:
-    :return:
-    """
-    w = labels.shape[0]
-    h = labels.shape[1]
-    x = np.zeros([w,h,12])
-    for i in range(0, w):
-        for j in range(0, h):
-            x[i,j,labels[i][j]]=1
-    return x
-
-
-def reverse_one_hot(image):
-    w = image.shape[0]
-    h = image.shape[1]
-    x = np.zeros([w,h,1])
-    # print(image.shape)
-    for i in range(0, w):
-        for j in range(0, h):
-            index, value = max(enumerate(image[i, j, :]), key=operator.itemgetter(1))
-            x[i, j] = index
-    return x
-
-
-
 def colour_dict(x):
     return {
-        0: [128,128,128],
-        1: [128,0,0],
-        2: [192,192,128],
-        3: [128,64,128],
-        4: [60,40,222],
-        5: [128,128,0],
-        6: [192,128,128],
-        7: [64,64,128],
-        8: [64,0,128],
-        9: [64,64,0],
-        10: [0,128,192],
-        11: [0,0,0]
+        0: [128, 128, 128],
+        1: [128, 0, 0],
+        2: [192, 192, 128],
+        3: [128, 64, 128],
+        4: [60, 40, 222],
+        5: [128, 128, 0],
+        6: [192, 128, 128],
+        7: [64, 64, 128],
+        8: [64, 0, 128],
+        9: [64, 64, 0],
+        10: [0, 128, 192],
+        11: [0, 0, 0]
     }[x]
 
 def colour_code_segmentation(image):
