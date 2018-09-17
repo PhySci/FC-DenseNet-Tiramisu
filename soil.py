@@ -47,24 +47,20 @@ def get_mask(mask, n_classes):
 
 
 def predict(img_size=[128, 128]):
-    class_dict = {0: "Negative",
-                  1: "Positive"}
+    """
 
-    n_classes = len(class_dict)
-
+    :param img_size:
+    :return:
+    """
     print("Setting up training procedure ...")
-
     inp = tf.placeholder(tf.float32, shape=[None, img_size[0], img_size[1], 3], name='input_images')
-
-    o = Tiramisu(preset_model='FC-DenseNet56', n_classes=2)
-
-    network = o.network
+    o = Tiramisu(preset_model='FC-DenseNet56', num_classes=2, img_size=[128, 128])
+    network = o.build_fc_densenet(inp)
     labels = tf.argmax(network, axis=3)
 
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
     sess = tf.Session(config=config)
-
     saver = tf.train.Saver(max_to_keep=1000)
     sess.run(tf.global_variables_initializer())
 
@@ -75,12 +71,12 @@ def predict(img_size=[128, 128]):
     # with graph.as_default():
 
     print("***** Begin prediction *****")
-    for i, (images, _, file_list) in enumerate(Fib(img_pth='./soil/train/images',
+    for i, (images, _, file_list) in enumerate(Fib(img_pth='../data/test/images',
                                            batch_size=8, shape=[128, 128], padding=[13, 14, 13, 14])):
         out = sess.run(labels, feed_dict={inp: images})
 
         for i, file_name in enumerate(file_list):
-            cv2.imwrite(file_name+'.png', out[i, :, :]*65535)
+            cv2.imwrite(os.path.join('../data/test/masks', file_name), out[i, 13:-14, 13:-14]*65535)
 
 
 def train(img_size=[128, 128]):
@@ -155,8 +151,8 @@ def train(img_size=[128, 128]):
 
 
 if __name__ == '__main__':
-    train()
-    #predict()
+    #train()
+    predict()
 
 
 
