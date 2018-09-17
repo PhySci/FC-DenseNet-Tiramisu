@@ -4,12 +4,121 @@ import tensorflow as tf
 import tensorflow.contrib.slim as slim
 import numpy as np
 
+
 class Tiramisu:
 
-    def __init__(self, num_classes=2, img_size=[256, 256]):
+    def __init__(self, num_classes=2, img_size=[256, 256], preset_model='FC-DenseNet56', dropout_p=0.2):
+        """
+        Constructor
+        :param num_classes:
+        :param img_size:
+        :param preset_model:
+        :param dropout_p: dropout rate applied after each convolution (0. for not using)
+        :return:
+        """
         self.num_classes = num_classes
         self.img_size = img_size
-        pass
+        self.preset_model = preset_model
+        self.dropout_p = dropout_p
+        self.labels = tf.placeholder(dtype=tf.int8, shape=[None, img_size[0], img_size[1]], name='labels')
+
+
+    def build_fc_densenet(self, inp):
+        """
+        Return fully-connected net
+        :param inputs:
+        :param preset_model:
+        :param num_classes: number of classes
+        :param n_filters_first_conv: number of filters for the first convolution applied
+        :param n_pool: number of pooling layers = number of transition down = number of transition up
+        :param growth_rate: number of new feature maps created by each layer in a dense block
+        :param n_layers_per_block: number of layers per block. Can be an int or a list of size 2 * n_pool + 1
+        :param dropout_p: dropout rate applied after each convolution (0. for not using)
+        :param scope:
+        :return:
+        """
+        n_filters_first_conv = 48
+        dropout_p = 0.2
+        scope = 'Tiramisu'
+
+        if self.preset_model == 'FC-DenseNet56':
+            n_pool = 5
+            growth_rate = 12
+            n_layers_per_block = 4
+        elif self.preset_model == 'FC-DenseNet67':
+            n_pool = 5
+            growth_rate = 16
+            n_layers_per_block = 5
+        elif self.preset_model == 'FC-DenseNet103':
+            n_pool = 5
+            growth_rate = 16
+            n_layers_per_block = [4, 5, 7, 10, 12, 15, 12, 10, 7, 5, 4]
+
+        if type(n_layers_per_block) == list:
+            assert (len(n_layers_per_block) == 2 * n_pool + 1)
+        elif type(n_layers_per_block) == int:
+            n_layers_per_block = [n_layers_per_block] * (2 * n_pool + 1)
+        else:
+            raise ValueError
+
+        # convert mask
+        with tf.variable_scope(scope, self.preset_model, [inp]) as sc:
+
+            #####################
+            # First Convolution #
+            #####################
+            # We perform a first convolution.
+            stack = slim.conv2d(inp, n_filters_first_conv, [3, 3], scope='first_conv')
+
+            n_filters = n_filters_first_conv
+            #####################
+            # Downsampling path #
+            #####################
+
+            skip_connection_list = []
+
+            for i in range(n_pool):
+                # Dense Block
+                stack, _ = DenseBlock(stack, n_layers_per_block[i], growth_rate, dropout_p,
+                                      scope='denseblock%d' % (i + 1))
+                n_filters += growth_rate * n_layers_per_block[i]
+                # At the end of the dense block, the current stack is stored in the skip_connections list
+                skip_connection_list.append(stack)
+
+                # Transition Down
+                stack = TransitionDown(stack, n_filters, dropout_p, scope='transitiondown%d' % (i + 1))
+
+            skip_connection_list = skip_connection_list[::-1]
+
+            #####################
+            #     Bottleneck    #
+            #####################
+
+            # Dense Block
+            # We will only upsample the new feature maps
+            stack, block_to_upsample = DenseBlock(stack, n_layers_per_block[n_pool], growth_rate, dropout_p,
+                                                  scope='denseblock%d' % (n_pool + 1))
+
+            #######################
+            #   Upsampling path   #
+            #######################
+
+            for i in range(n_pool):
+                # Transition Up ( Upsampling + concatenation with the skip connection)
+                n_filters_keep = growth_rate * n_layers_per_block[n_pool + i]
+                stack = TransitionUp(block_to_upsample, skip_connection_list[i], n_filters_keep,
+                                     scope='transitionup%d' % (n_pool + i + 1))
+
+                # Dense Block
+                # We will only upsample the new feature maps
+                stack, block_to_upsample = DenseBlock(stack, n_layers_per_block[n_pool + i + 1], growth_rate, dropout_p,
+                                                      scope='denseblock%d' % (n_pool + i + 2))
+
+            #####################
+            #      Softmax      #
+            #####################
+            net = slim.conv2d(stack, self.num_classes, [1, 1], scope='logits')
+            return net
 
 def preact_conv(inputs, n_filters, filter_size=[3, 3], dropout_p=0.2):
     """
@@ -82,96 +191,3 @@ def TransitionUp(block_to_upsample, skip_connection, n_filters_keep, scope=None)
     # Concatenate with skip connection
     l = tf.concat([l, skip_connection], axis=-1)
     return l
-
-def build_fc_densenet(inputs, preset_model='FC-DenseNet56', num_classes=12, n_filters_first_conv=48, n_pool=5,
-                      growth_rate=4, n_layers_per_block=4, dropout_p=0.2, scope=None, n_classes=12):
-    """
-
-    :param inputs:
-    :param preset_model:
-    :param num_classes: number of classes
-    :param n_filters_first_conv: number of filters for the first convolution applied
-    :param n_pool: number of pooling layers = number of transition down = number of transition up
-    :param growth_rate: number of new feature maps created by each layer in a dense block
-    :param n_layers_per_block: number of layers per block. Can be an int or a list of size 2 * n_pool + 1
-    :param dropout_p: dropout rate applied after each convolution (0. for not using)
-    :param scope:
-    :return:
-    """
-
-    if preset_model == 'FC-DenseNet56':
-      n_pool=5
-      growth_rate=12
-      n_layers_per_block=4
-    elif preset_model == 'FC-DenseNet67':
-      n_pool=5
-      growth_rate=16
-      n_layers_per_block=5
-    elif preset_model == 'FC-DenseNet103':
-      n_pool=5
-      growth_rate=16
-      n_layers_per_block=[4, 5, 7, 10, 12, 15, 12, 10, 7, 5, 4]
-
-    if type(n_layers_per_block) == list:
-        assert (len(n_layers_per_block) == 2 * n_pool + 1)
-    elif type(n_layers_per_block) == int:
-        n_layers_per_block = [n_layers_per_block] * (2 * n_pool + 1)
-    else:
-        raise ValueError
-
-    #convert mask
-    with tf.variable_scope(scope, preset_model, [inputs]) as sc:
-
-      #####################
-      # First Convolution #
-      #####################
-      # We perform a first convolution.
-      stack = slim.conv2d(inputs, n_filters_first_conv, [3, 3], scope='first_conv')
-
-      n_filters = n_filters_first_conv
-      #####################
-      # Downsampling path #
-      #####################
-
-      skip_connection_list = []
-
-      for i in range(n_pool):
-        # Dense Block
-        stack, _ = DenseBlock(stack, n_layers_per_block[i], growth_rate, dropout_p, scope='denseblock%d' % (i+1))
-        n_filters += growth_rate * n_layers_per_block[i]
-        # At the end of the dense block, the current stack is stored in the skip_connections list
-        skip_connection_list.append(stack)
-
-        # Transition Down
-        stack = TransitionDown(stack, n_filters, dropout_p, scope='transitiondown%d'%(i+1))
-
-      skip_connection_list = skip_connection_list[::-1]
-
-      #####################
-      #     Bottleneck    #
-      #####################
-
-      # Dense Block
-      # We will only upsample the new feature maps
-      stack, block_to_upsample = DenseBlock(stack, n_layers_per_block[n_pool], growth_rate, dropout_p, scope='denseblock%d' % (n_pool + 1))
-
-
-      #######################
-      #   Upsampling path   #
-      #######################
-
-      for i in range(n_pool):
-        # Transition Up ( Upsampling + concatenation with the skip connection)
-        n_filters_keep = growth_rate * n_layers_per_block[n_pool + i]
-        stack = TransitionUp(block_to_upsample, skip_connection_list[i], n_filters_keep, scope='transitionup%d' % (n_pool + i + 1))
-
-        # Dense Block
-        # We will only upsample the new feature maps
-        stack, block_to_upsample = DenseBlock(stack, n_layers_per_block[n_pool + i + 1], growth_rate, dropout_p, scope='denseblock%d' % (n_pool + i + 2))
-
-
-      #####################
-      #      Softmax      #
-      #####################
-      net = slim.conv2d(stack, num_classes, [1, 1], scope='logits')
-      return net
