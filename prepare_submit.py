@@ -28,7 +28,7 @@ def main(pth=None):
         print('id,rle_mask', file=text_file)
         for file in os.listdir(pth):
             file_name, _ = os.path.splitext(file)
-            img = cv2.imread(os.path.join(os.path.join(pth, file)), -1).flatten(order='C')
+            img = cv2.imread(os.path.join(os.path.join(pth, file)), -1).flatten(order='F')
             s = np.array_str(my_rlc(img), max_line_width=99999)[1:-1]
             if s == '':
                 print(file_name + ',', file=text_file)
@@ -37,4 +37,4 @@ def main(pth=None):
 
 
 if __name__ == '__main__':
-    main('../data/test/masks')
+    main('./soil/test/masks')

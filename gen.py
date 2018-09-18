@@ -58,25 +58,3 @@ class Fib:
         self.i +=1
 
         return images, mask, file_list
-
-def one_hot_it(labels):
-    """
-    Какой же пиздец. Надо как-то это переварить и переписать
-    :param labels:
-    :return:
-    """
-    w = labels.shape[0]
-    h = labels.shape[1]
-    x = np.zeros([w, h, 12])
-    for i in range(0, w):
-        for j in range(0, h):
-            x[i,j,labels[i][j]]=1
-    return x
-
-
-if __name__ == '__main__':
-    print('S')
-
-    for img, msk in Fib(img_pth='./CamVid/train', mask_pth='./CamVid/train_labels'):
-        print(img)
-        print(msk)
