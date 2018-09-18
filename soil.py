@@ -13,6 +13,8 @@ from FC_DenseNet_Tiramisu import Tiramisu
 
 from gen import Fib
 
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
+
 def count_params():
     """
     Count total number of parameters in the model
