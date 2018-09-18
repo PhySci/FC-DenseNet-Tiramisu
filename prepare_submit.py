@@ -24,7 +24,7 @@ def main(pth=None):
     :param pth:
     :return:
     """
-    with open("Output.txt", "w") as text_file:
+    with open("Output2.txt", "w") as text_file:
         print('id,rle_mask', file=text_file)
         for file in os.listdir(pth):
             file_name, _ = os.path.splitext(file)

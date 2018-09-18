@@ -15,25 +15,6 @@ from gen import Fib
 
 os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
-def count_params():
-    """
-    Count total number of parameters in the model
-    :return:
-    """
-    total_parameters = 0
-    for variable in tf.trainable_variables():
-        # shape is an array of tf.Dimension
-        shape = variable.get_shape()
-        # print(shape)
-        # print(len(shape))
-        variable_parameters = 1
-        for dim in shape:
-            # print(dim)
-            variable_parameters *= dim.value
-        # print(variable_parameters)
-        total_parameters += variable_parameters
-    print("This model has %d trainable parameters"% (total_parameters))
-
 def get_mask(mask, n_classes):
     """
     Return OHE mask
@@ -41,11 +22,12 @@ def get_mask(mask, n_classes):
     :param n_classes:
     :return:
     """
-    msk_list = list()
-    for cls in range(n_classes):
-        cls_msk = tf.to_int32(tf.equal(mask, cls))
-        msk_list.append(cls_msk)
-    return tf.transpose(tf.stack(values=msk_list, axis=0, name='concat'), perm=[1, 2, 3, 0])
+    with tf.name_scope('get_mask'):
+        msk_list = list()
+        for cls in range(n_classes):
+            cls_msk = tf.to_int32(tf.equal(mask, cls))
+            msk_list.append(cls_msk)
+        return tf.transpose(tf.stack(values=msk_list, axis=0, name='concat'), perm=[1, 2, 3, 0])
 
 
 def predict(img_size=[128, 128]):
@@ -87,7 +69,7 @@ def predict(img_size=[128, 128]):
 
 def train():
     o = Tiramisu(preset_model='FC-DenseNet56', num_classes=2, img_size=[128, 128])
-    o.train(batch_size=8)
+    o.train(batch_size=2)
 
 if __name__ == '__main__':
     train()
