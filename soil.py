@@ -6,44 +6,12 @@ import time, datetime
 import tqdm
 
 from utils import *
-
 import matplotlib.pyplot as plt
-
 from FC_DenseNet_Tiramisu import Tiramisu
-
 from gen import Fib
 
-def count_params():
-    """
-    Count total number of parameters in the model
-    :return:
-    """
-    total_parameters = 0
-    for variable in tf.trainable_variables():
-        # shape is an array of tf.Dimension
-        shape = variable.get_shape()
-        # print(shape)
-        # print(len(shape))
-        variable_parameters = 1
-        for dim in shape:
-            # print(dim)
-            variable_parameters *= dim.value
-        # print(variable_parameters)
-        total_parameters += variable_parameters
-    print("This model has %d trainable parameters"% (total_parameters))
 
-def get_mask(mask, n_classes):
-    """
-    Return OHE mask
-    :param mask:
-    :param n_classes:
-    :return:
-    """
-    msk_list = list()
-    for cls in range(n_classes):
-        cls_msk = tf.to_int32(tf.equal(mask, cls))
-        msk_list.append(cls_msk)
-    return tf.transpose(tf.stack(values=msk_list, axis=0, name='concat'), perm=[1, 2, 3, 0])
+
 
 
 def predict(img_size=[128, 128]):
@@ -79,80 +47,10 @@ def predict(img_size=[128, 128]):
             cv2.imwrite(os.path.join('../data/test/masks', file_name), out[i, 13:-14, 13:-14]*65535)
 
 
-def train(img_size=[128, 128]):
-    num_epochs = 250
-
-    class_dict = {0: "Negative",
-                  1: "Positive"}
-
-    n_classes = len(class_dict)
-
-    print("Setting up training procedure ...")
-
-    labels = tf.placeholder(dtype=tf.int8, shape=[None, img_size[0], img_size[1]], name='labels')
-    inp = tf.placeholder(tf.float32, shape=[None, img_size[0], img_size[1], 3], name='input_images')
-
-    o = Tiramisu(preset_model='FC-DenseNet56', num_classes=2, img_size=[128, 128])
-    network = o.build_fc_densenet(inp)
-
-    ohe = get_mask(labels, n_classes)
-    loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=network, labels=ohe))
-    opt = tf.train.RMSPropOptimizer(learning_rate=0.001, decay=0.995).minimize(loss)
-    tf_metric, tf_metric_update = tf.metrics.mean_iou(labels, tf.argmax(network, axis=3), name="iou", num_classes=n_classes)
-
-    continue_training = False
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    sess = tf.Session(config=config)
-
-    saver = tf.train.Saver(max_to_keep=1000)
-    sess.run(tf.global_variables_initializer())
-
-    if continue_training:
-        print('Loaded latest model checkpoint')
-        saver.restore(sess, "checkpoints/latest_model.ckpt")
-
-    avg_scores_per_epoch = []
-
-    #graph = tf.Graph()
-    #with graph.as_default():
-
-    running_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope="my_metric")
-    running_vars_initializer = tf.variables_initializer(var_list=running_vars)
-
-
-    print("***** Begin training *****")
-    avg_loss_per_epoch = []
-    # Do the training here
-    for epoch in range(0, num_epochs):
-        current_losses = []
-        sess.run(running_vars_initializer)
-        for i, (images, mask, _) in enumerate(Fib(img_pth='../data/train/images', mask_pth='../data/train/masks',
-                                             batch_size=8, shape=[128, 128], padding=[13, 14, 13, 14])):
-            _, l = sess.run([opt, loss], feed_dict={inp: images, labels: mask})
-            current_losses.append(l)
-
-            # estimate quality
-            #sess.run(tf_metric_update, feed_dict={inp: images, labels: mask})
-            #score = sess.run(tf_metric)
-            #print("[TF] SCORE: ", score)
-
-        mean_loss = np.mean(current_losses)
-        avg_loss_per_epoch.append(mean_loss)
-        print(epoch, ' : ', mean_loss)
-
-        # Create directories if needed
-        if not os.path.isdir("%s/%04d" % ("checkpoints", epoch)):
-            os.makedirs("%s/%04d" % ("checkpoints", epoch))
-
-        saver.save(sess, "%s/latest_model.ckpt" % "checkpoints")
-        saver.save(sess, "%s/%04d/model.ckpt" % ("checkpoints", epoch))
-        #@TODO add validation
-
-
 if __name__ == '__main__':
-    #train()
-    predict()
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    o = Tiramisu(preset_model='FC-DenseNet103', num_classes=2, img_size=[128, 128])
+    o.train(batch_size=4, num_epochs=25)
 
 
 

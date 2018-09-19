@@ -3,6 +3,9 @@ import os, time, cv2
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
 import numpy as np
+from gen import Fib
+import datetime
+from tqdm import tqdm
 
 
 class Tiramisu:
@@ -20,10 +23,29 @@ class Tiramisu:
         self.img_size = img_size
         self.preset_model = preset_model
         self.dropout_p = dropout_p
+        self.inp = tf.placeholder(tf.float32, shape=[None, img_size[0], img_size[1], 3], name='input_images')
         self.labels = tf.placeholder(dtype=tf.int8, shape=[None, img_size[0], img_size[1]], name='labels')
+        self.graph = self.get_graph()
+        self.loss = self.get_loss()
+        self.optimizer = self.get_optimizer()
 
 
-    def build_fc_densenet(self, inp):
+    def get_optimizer(self):
+        """
+        Optimizer
+        :return:
+        """
+        return tf.train.RMSPropOptimizer(learning_rate=0.001, decay=0.995).minimize(self.loss)
+
+    def get_loss(self):
+        """
+        Loss
+        :return:
+        """
+        ohe = get_mask(self.labels, self.num_classes)
+        return tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=self.graph, labels=ohe))
+
+    def get_graph(self):
         """
         Return fully-connected net
         :param inputs:
@@ -62,21 +84,12 @@ class Tiramisu:
             raise ValueError
 
         # convert mask
-        with tf.variable_scope(scope, self.preset_model, [inp]) as sc:
-
-            #####################
-            # First Convolution #
-            #####################
-            # We perform a first convolution.
-            stack = slim.conv2d(inp, n_filters_first_conv, [3, 3], scope='first_conv')
-
+        with tf.variable_scope(scope, self.preset_model, [self.inp]) as sc:
+            # First Convolution (we perform a first convolution).
+            stack = slim.conv2d(self.inp, n_filters_first_conv, [3, 3], scope='first_conv')
             n_filters = n_filters_first_conv
-            #####################
-            # Downsampling path #
-            #####################
-
+            # Downsampling path
             skip_connection_list = []
-
             for i in range(n_pool):
                 # Dense Block
                 stack, _ = DenseBlock(stack, n_layers_per_block[i], growth_rate, dropout_p,
@@ -84,7 +97,6 @@ class Tiramisu:
                 n_filters += growth_rate * n_layers_per_block[i]
                 # At the end of the dense block, the current stack is stored in the skip_connections list
                 skip_connection_list.append(stack)
-
                 # Transition Down
                 stack = TransitionDown(stack, n_filters, dropout_p, scope='transitiondown%d' % (i + 1))
 
@@ -119,6 +131,79 @@ class Tiramisu:
             #####################
             net = slim.conv2d(stack, self.num_classes, [1, 1], scope='logits')
             return net
+
+    def train(self, num_epochs=2, batch_size=2):
+        """
+        Train NN
+        :param num_epochs:
+        :return:
+        """
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+
+        saver = tf.train.Saver(max_to_keep=1000)
+
+        tf_metric, tf_metric_update = tf.metrics.mean_iou(self.labels, tf.argmax(self.graph, axis=3),
+                                                          name="iou", num_classes=self.num_classes)
+        running_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope="iou")
+        running_vars_initializer = tf.variables_initializer(var_list=running_vars)
+
+        with tf.Session(config=config) as sess:
+            sess.run(tf.global_variables_initializer())
+
+            train_writer = tf.summary.FileWriter('./train/'+datetime.datetime.now().strftime("%Y-%m-%d-%H-%M"),
+                                                 sess.graph)
+            
+            print("***** Begin training *****")
+            avg_loss_per_epoch = []
+            # Do the training here
+            for epoch in range(0, num_epochs):
+                print('Epoch: '+str(epoch))
+                loss = []
+                sess.run(running_vars_initializer)
+                
+                for images, mask, _ in tqdm(Fib(img_pth='./soil/train/images', mask_pth='./soil/train/masks',
+                                                batch_size=batch_size, shape=[128, 128],
+                                                padding=[13, 14, 13, 14]),
+                                            ascii=True, unit=' batch'):
+                    _, l = sess.run([self.optimizer, self.loss], feed_dict={self.inp: images, self.labels: mask})
+                    loss.append(l)
+
+                for images, mask, _ in tqdm(Fib(img_pth='./soil/val/images', mask_pth='./soil/val/masks',
+                                                batch_size=batch_size, shape=[128, 128],
+                                                padding=[13, 14, 13, 14]),
+                                            ascii=True, unit='batch'):
+                    sess.run(tf_metric_update, feed_dict={self.inp: images, self.labels: mask})
+                    
+                iou_score = sess.run(tf_metric)
+                print("[TF] SCORE: ", iou_score)
+
+                summary = tf.Summary()
+                summary.value.add(tag='loss_mean', simple_value=np.array(loss).mean())
+                summary.value.add(tag='iou_mean', simple_value=iou_score)
+                #train_writer.add_summary(sess.run(tf.summary.merge_all(), feed_dict=feed_dict), epoch)
+                train_writer.add_summary(summary, epoch)
+                
+                # Create directories if needed
+                if not os.path.isdir("%s/%04d" % ("checkpoints", epoch)):
+                    os.makedirs("%s/%04d" % ("checkpoints", epoch))
+
+                saver.save(sess, "%s/latest_model.ckpt" % "checkpoints")
+                saver.save(sess, "%s/%04d/model.ckpt" % ("checkpoints", epoch))
+
+
+def get_mask(mask, n_classes):
+    """
+    Return OHE mask
+    :param mask:
+    :param n_classes:
+    :return:
+    """
+    msk_list = list()
+    for cls in range(n_classes):
+        cls_msk = tf.to_int32(tf.equal(mask, cls))
+        msk_list.append(cls_msk)
+    return tf.transpose(tf.stack(values=msk_list, axis=0, name='concat'), perm=[1, 2, 3, 0])
 
 def preact_conv(inputs, n_filters, filter_size=[3, 3], dropout_p=0.2):
     """
