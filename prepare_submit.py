@@ -24,17 +24,26 @@ def main(pth=None):
     :param pth:
     :return:
     """
-    with open("Output.txt", "w") as text_file:
-        print('id,rle_mask', file=text_file)
-        for file in os.listdir(pth):
-            file_name, _ = os.path.splitext(file)
-            img = cv2.imread(os.path.join(os.path.join(pth, file)), -1).flatten(order='C')
+    fid = open("output_fortran.txt", "w")
+    print('id,rle_mask', file=fid)
+        
+    for file in os.listdir(pth):
+        file_name, ext = os.path.splitext(file)
+        if ext == '.png':
+            try:
+                img = cv2.imread(os.path.join(os.path.join(pth, file)), -1)
+                img = img.flatten(order='F')
+            except Exception as err:
+                print(repr(err))
+                print(file)
             s = np.array_str(my_rlc(img), max_line_width=99999)[1:-1]
             if s == '':
-                print(file_name + ',', file=text_file)
+                print(file_name + ',', file=fid)
             else:
-                print(file_name+','+re.sub(' +', ' ', s.strip()), file=text_file)
+                print(file_name+','+re.sub(' +', ' ', s.strip()), file=fid)
+        else:
+            print(file)
 
 
 if __name__ == '__main__':
-    main('../data/test/masks')
+    main('./predictions')
