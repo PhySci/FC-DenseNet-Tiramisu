@@ -6,7 +6,6 @@ import numpy as np
 from gen import Fib
 import datetime
 from tqdm import tqdm
-import re
 
 class Tiramisu:
 
@@ -120,43 +119,24 @@ class Tiramisu:
             net = slim.conv2d(stack, self.num_classes, [1, 1], scope='logits')
             return net
 
-    def predict(self, test_pth=None):
+    def predict(self, test_pth=None, save_pth=None):
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
         sess = tf.Session(config=config)
         sess.run(tf.global_variables_initializer())
         print('Loaded latest model checkpoint')
-        saver = tf.train.Saver()
+        saver = tf.train.Saver(max_to_keep=1000)
         saver.restore(sess, "checkpoints/latest_model.ckpt")
         fid = open("Output.txt", "w")
         print('id,rle_mask', file=fid)
         print("***** Begin prediction *****")
         for images, _, file_list in tqdm(Fib(img_pth=test_pth,
-                                             batch_size=16,
-                                             shape=[128, 128],
-                                             padding=[13, 14, 13, 14])):
+                                                       batch_size=16, shape=[128, 128], padding=[13, 14, 13, 14])):
             
             out = sess.run(tf.argmax(self.graph, axis=3), feed_dict={self.inp: images})
 
             for fi, file_name in enumerate(file_list):
-                img = out[fi, 13:-14, 13:-14]
-                #cv2.imwrite(os.path.join('./predictions', file_name), img* 65535)
-                arr = img.flatten(order='C')
-                arr = np.insert(arr, 0, 0)
-                arr = np.append(arr, 0)
-                d = np.diff(np.int8(np.greater(arr, 0)))
-                starts = np.where(d == 1)[0]
-                ends = np.where(d == -1)[0]
-                len = ends - starts
-                assert (starts.shape == ends.shape)
-                res = np.stack((starts + 1, len), axis=1).flatten()
-                s = np.array_str(res, max_line_width=99999)[1:-1]
-                img_id, _ = os.path.splitext(file_name)
-                if s == '':
-                    print(img_id + ',', file=fid)
-                else:
-                    print(img_id + ',' + re.sub(' +', ' ', s.strip()), file=fid)
-        fid.close()
+                cv2.imwrite(os.path.join(save_pth, file_name), out[fi, 13:-14, 13:-14]* 65535)
 
     def train(self, num_epochs=2, batch_size=2):
         """
@@ -187,7 +167,7 @@ class Tiramisu:
                 print('Epoch: '+str(epoch))
                 loss = []
                 sess.run(running_vars_initializer)
-
+                
                 for images, mask, _ in tqdm(Fib(img_pth='./soil/train/images', mask_pth='./soil/train/masks',
                                                 batch_size=batch_size, shape=[128, 128],
                                                 padding=[13, 14, 13, 14]),
@@ -266,7 +246,6 @@ def DenseBlock(stack, n_layers, growth_rate, dropout_p, scope=None):
     new_features = tf.concat(new_features, axis=-1)
     return stack, new_features
 
-
 def TransitionLayer(inputs, n_filters, dropout_p=0.2, compression=1.0, scope=None):
   """
   Transition layer for DenseNet
@@ -289,7 +268,6 @@ def TransitionDown(inputs, n_filters, dropout_p=0.2, scope=None):
     l = preact_conv(inputs, n_filters, filter_size=[1, 1], dropout_p=dropout_p)
     l = slim.pool(l, [2, 2], stride=[2, 2], pooling_type='MAX')
     return l
-
 
 def TransitionUp(block_to_upsample, skip_connection, n_filters_keep, scope=None):
   """

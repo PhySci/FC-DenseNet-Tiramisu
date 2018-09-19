@@ -6,7 +6,7 @@ import cv2
 class Fib:
     '''iterator that yields numbers in the Fibonacci sequence'''
 
-    def __init__(self, img_pth=None, mask_pth=None, batch_size=1, shape=None, padding=None, random_flip=False):
+    def __init__(self, img_pth=None, mask_pth=None, batch_size=1, shape=None, padding=None):
         """
         Constructor
         :param img_pth:
@@ -45,7 +45,6 @@ class Fib:
             if self.padding is not None:
                 img = cv2.copyMakeBorder(img, self.padding[0], self.padding[1], self.padding[2], self.padding[3],
                                          cv2.BORDER_REFLECT_101)
-
             images[i, :, :, :] = np.float32(img)/255.0
             if self.mask_pth is not None:
                 img = cv2.imread(os.path.join(self.mask_pth, file), -1)
@@ -56,12 +55,9 @@ class Fib:
 
         if self.i >= self.max:
             raise StopIteration
-        self.i += 1
+        self.i +=1
 
         return images, mask, file_list
-
-    def __len__(self):
-        return self.max
 
 def one_hot_it(labels):
     """
