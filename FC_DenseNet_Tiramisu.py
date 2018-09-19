@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 class Tiramisu:
 
-    def __init__(self, num_classes=2, img_size=[256, 256], preset_model='FC-DenseNet56', dropout_p=0.2):
+    def __init__(self, num_classes=2, img_size=[256, 256], preset_model='FC-DenseNet56', dropout_p=0.2, lr=0.001):
         """
         Constructor
         :param num_classes:
@@ -27,6 +27,7 @@ class Tiramisu:
         self.graph = self.get_graph()
         self.loss = self.get_loss()
         self.optimizer = self.get_optimizer()
+        self.lr = lr
 
 
     def get_optimizer(self):
@@ -34,7 +35,7 @@ class Tiramisu:
         Optimizer
         :return:
         """
-        return tf.train.RMSPropOptimizer(learning_rate=0.001, decay=0.995).minimize(self.loss)
+        return tf.train.RMSPropOptimizer(learning_rate=self.lr, decay=0.995).minimize(self.loss)
 
     def get_loss(self):
         """
