@@ -19,7 +19,10 @@ class Fib:
         self.i =0
         self.shape = shape
         self.padding = padding
-        self.train_files = os.listdir(img_pth)
+        file_list = os.listdir(img_pth)
+        shuffle(file_list)
+        self.train_files = file_list
+
         self.max = np.ceil(len(self.train_files)/self.batch_size)
 
     def __iter__(self):
@@ -42,18 +45,19 @@ class Fib:
 
         for i, file in enumerate(file_list):
             img = cv2.imread(os.path.join(self.img_pth, file), -1)
-            k = np.random.choice([0, 1, 2, 3])
+            k = np.random.choice([0, 1, 2, 3], p=[0.7, 0.1, 0.1, 0.1])
             if self.padding is not None:
                 img = cv2.copyMakeBorder(img, self.padding[0], self.padding[1], self.padding[2], self.padding[3],
                                          cv2.BORDER_REFLECT_101)
             img = np.float32(img)/255.0
             images[i, :, :, :] = self.augment_img(img, k)
             if self.mask_pth is not None:
+                # Это может быть выделено в отдельную функцию.
                 img = cv2.imread(os.path.join(self.mask_pth, file), -1)
                 if self.padding is not None:
                     img = cv2.copyMakeBorder(img, self.padding[0], self.padding[1], self.padding[2], self.padding[3],
                                              cv2.BORDER_REFLECT_101)
-                img = np.int8(img/65535.0)
+                img = np.int8(img/65535)
                 mask[i, :, :] = self.augment_img(img, k)
 
         if self.i >= self.max:

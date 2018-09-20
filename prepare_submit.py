@@ -2,8 +2,10 @@ import os
 import cv2
 import numpy as np
 import re
+import datetime
 
-def my_rlc(arr):
+
+def mask2rlc(arr):
     """
 
     :param arr:
@@ -18,13 +20,14 @@ def my_rlc(arr):
     assert (starts.shape == ends.shape)
     return np.stack((starts+1, len), axis=1).flatten()
 
+
 def main(pth=None):
     """
     Read and decode images in RLC format
     :param pth:
     :return:
     """
-    fid = open("output_fortran.txt", "w")
+    fid = open("test-"+datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")+".txt", "w")
     print('id,rle_mask', file=fid)
         
     for file in os.listdir(pth):
@@ -36,7 +39,7 @@ def main(pth=None):
             except Exception as err:
                 print(repr(err))
                 print(file)
-            s = np.array_str(my_rlc(img), max_line_width=99999)[1:-1]
+            s = np.array_str(mask2rlc(img), max_line_width=99999)[1:-1]
             if s == '':
                 print(file_name + ',', file=fid)
             else:

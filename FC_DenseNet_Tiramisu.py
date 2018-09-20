@@ -6,6 +6,7 @@ import numpy as np
 from gen import Fib
 import datetime
 from tqdm import tqdm
+from collections import Counter
 
 class Tiramisu:
 
@@ -22,13 +23,14 @@ class Tiramisu:
         self.img_size = img_size
         self.preset_model = preset_model
         self.dropout_p = dropout_p
+        self.lr = lr
+
         self.inp = tf.placeholder(tf.float32, shape=[None, img_size[0], img_size[1], 3], name='input_images')
         self.labels = tf.placeholder(dtype=tf.int8, shape=[None, img_size[0], img_size[1]], name='labels')
         self.graph = self.get_graph()
         self.loss = self.get_loss()
         self.optimizer = self.get_optimizer()
-        self.lr = lr
-
+        self.metric = self.get_custom_metric()
 
     def get_optimizer(self):
         """
@@ -138,8 +140,20 @@ class Tiramisu:
 
             for fi, file_name in enumerate(file_list):
                 cv2.imwrite(os.path.join(save_pth, file_name), out[fi, 13:-14, 13:-14]* 65535)
+                
+    def get_custom_metric(self):
+        mask1 = tf.cast(self.labels, dtype=tf.bool, name='bool_mask1')
+        mask2 = tf.cast(tf.argmax(self.graph, axis=3), dtype=tf.bool, name='bool_mask1')
+        intersection = tf.logical_and(mask1, mask2, name='intersection')
+        union = tf.logical_or(mask1, mask2, name='intersection')
+        intersection_len = tf.count_nonzero(intersection, axis=[1, 2])
+        union_len = tf.count_nonzero(union, axis=[1, 2])
+        iou = tf.divide(intersection_len, union_len)
+        iou = tf.where(tf.is_nan(iou), tf.ones_like(iou), iou)
+        iou = tf.floor(iou*20)
+        return iou/20.0
 
-    def train(self, num_epochs=2, batch_size=2):
+    def train(self, num_epochs=2, batch_size=2, repeat=False):
         """
         Train NN
         :param num_epochs:
@@ -155,8 +169,12 @@ class Tiramisu:
         running_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope="iou")
         running_vars_initializer = tf.variables_initializer(var_list=running_vars)
 
+
         with tf.Session(config=config) as sess:
-            sess.run(tf.global_variables_initializer())
+            if repeat:
+                saver.restore(sess, "checkpoints/latest_model.ckpt")
+            else:
+                sess.run(tf.global_variables_initializer())
 
             train_writer = tf.summary.FileWriter('./train/'+datetime.datetime.now().strftime("%Y-%m-%d-%H-%M"),
                                                  sess.graph)
@@ -165,6 +183,7 @@ class Tiramisu:
             avg_loss_per_epoch = []
             # Do the training here
             for epoch in range(0, num_epochs):
+                count = Counter()
                 print('Epoch: '+str(epoch))
                 loss = []
                 sess.run(running_vars_initializer)
@@ -180,15 +199,32 @@ class Tiramisu:
                                                 batch_size=batch_size, shape=[128, 128],
                                                 padding=[13, 14, 13, 14]),
                                             ascii=True, unit='batch'):
-                    sess.run(tf_metric_update, feed_dict={self.inp: images, self.labels: mask})
-                    
+                    _, cn = sess.run([tf_metric_update, self.metric], feed_dict={self.inp: images, self.labels: mask})
+                     
+                    for el in list(cn):
+                        count[el] +=1 
+                                             
                 iou_score = sess.run(tf_metric)
-                print("[TF] SCORE: ", iou_score)
+                print("Mean IoU score: ", iou_score)
+                print(count)
+                       
+                s = 0.0
+                cnt = 0                              
+                for key, value in count.items():
+                    cnt += value
+                    if key <0.5:
+                        continue
+                    s +=key*value
+                try:    
+                    s /= cnt
+                except ZeroDivisionError:
+                    s = 0.0
+                print(s)    
 
                 summary = tf.Summary()
-                summary.value.add(tag='loss_mean', simple_value=np.array(loss).mean())
-                summary.value.add(tag='iou_mean', simple_value=iou_score)
-                #train_writer.add_summary(sess.run(tf.summary.merge_all(), feed_dict=feed_dict), epoch)
+                summary.value.add(tag='metrics/loss_mean', simple_value=np.array(loss).mean())
+                summary.value.add(tag='metrics/iou_mean', simple_value=iou_score)
+                summary.value.add(tag='metrics/metric1', simple_value=s)
                 train_writer.add_summary(summary, epoch)
                 
                 # Create directories if needed
