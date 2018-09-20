@@ -42,19 +42,38 @@ class Fib:
 
         for i, file in enumerate(file_list):
             img = cv2.imread(os.path.join(self.img_pth, file), -1)
+            k = np.random.choice([0, 1, 2, 3])
             if self.padding is not None:
                 img = cv2.copyMakeBorder(img, self.padding[0], self.padding[1], self.padding[2], self.padding[3],
                                          cv2.BORDER_REFLECT_101)
-            images[i, :, :, :] = np.float32(img)/255.0
+            img = np.float32(img)/255.0
+            images[i, :, :, :] = self.augment_img(img, k)
             if self.mask_pth is not None:
                 img = cv2.imread(os.path.join(self.mask_pth, file), -1)
                 if self.padding is not None:
                     img = cv2.copyMakeBorder(img, self.padding[0], self.padding[1], self.padding[2], self.padding[3],
                                              cv2.BORDER_REFLECT_101)
-                mask[i, :, :] = np.int8(img/65535.0)
+                img = np.int8(img/65535.0)
+                mask[i, :, :] = self.augment_img(img, k)
 
         if self.i >= self.max:
             raise StopIteration
         self.i +=1
 
         return images, mask, file_list
+
+    @staticmethod
+    def augment_img(img, k):
+        if k == 0:
+            return img
+        elif k == 1:
+            return cv2.flip(img, 0)
+        elif k == 2:
+            return cv2.flip(img, -1)
+        elif k == 3:
+            return cv2.flip(img, 1)
+        else:
+            raise ValueError('Unknown augmentation code')
+            return img
+
+
