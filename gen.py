@@ -6,7 +6,7 @@ import cv2
 class Fib:
     '''iterator that yields numbers in the Fibonacci sequence'''
 
-    def __init__(self, img_pth=None, mask_pth=None, batch_size=1, shape=None, padding=None):
+    def __init__(self, img_pth=None, mask_pth=None, batch_size=1, shape=None, padding=None, flip=False):
         """
         Constructor
         :param img_pth:
@@ -19,6 +19,7 @@ class Fib:
         self.i =0
         self.shape = shape
         self.padding = padding
+        self.flip = flip
         file_list = os.listdir(img_pth)
         shuffle(file_list)
         self.train_files = file_list
@@ -45,7 +46,10 @@ class Fib:
 
         for i, file in enumerate(file_list):
             img = cv2.imread(os.path.join(self.img_pth, file), -1)
-            k = np.random.choice([0, 1, 2, 3], p=[0.7, 0.1, 0.1, 0.1])
+            if self.flip:
+                k = np.random.choice([0, 1, 2, 3], p=[0.4, 0.2, 0.2, 0.2])
+            else:
+                k = 0
             if self.padding is not None:
                 img = cv2.copyMakeBorder(img, self.padding[0], self.padding[1], self.padding[2], self.padding[3],
                                          cv2.BORDER_REFLECT_101)

@@ -134,7 +134,10 @@ class Tiramisu:
         print('id,rle_mask', file=fid)
         print("***** Begin prediction *****")
         for images, _, file_list in tqdm(Fib(img_pth=test_pth,
-                                                       batch_size=16, shape=[128, 128], padding=[13, 14, 13, 14])):
+                                             batch_size=8,
+                                             shape=[128, 128],
+                                             padding=[13, 14, 13, 14],
+                                             flip=False)):
             
             out = sess.run(tf.argmax(self.graph, axis=3), feed_dict={self.inp: images})
 
@@ -188,16 +191,20 @@ class Tiramisu:
                 loss = []
                 sess.run(running_vars_initializer)
                 
-                for images, mask, _ in tqdm(Fib(img_pth='./soil/train/images', mask_pth='./soil/train/masks',
-                                                batch_size=batch_size, shape=[128, 128],
-                                                padding=[13, 14, 13, 14]),
+                for images, mask, _ in tqdm(Fib(img_pth='./soil/train/images',
+                                                mask_pth='./soil/train/masks',
+                                                batch_size=batch_size,
+                                                shape=[128, 128],
+                                                padding=[13, 14, 13, 14],
+                                                flip=True),
                                             ascii=True, unit=' batch'):
                     _, l = sess.run([self.optimizer, self.loss], feed_dict={self.inp: images, self.labels: mask})
                     loss.append(l)
 
                 for images, mask, _ in tqdm(Fib(img_pth='./soil/val/images', mask_pth='./soil/val/masks',
                                                 batch_size=batch_size, shape=[128, 128],
-                                                padding=[13, 14, 13, 14]),
+                                                padding=[13, 14, 13, 14],
+                                                flip=False),
                                             ascii=True, unit='batch'):
                     _, cn = sess.run([tf_metric_update, self.metric], feed_dict={self.inp: images, self.labels: mask})
                      
