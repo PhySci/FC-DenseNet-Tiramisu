@@ -24,6 +24,8 @@ class Tiramisu:
         self.preset_model = preset_model
         self.dropout_p = dropout_p
         self.lr = lr
+        self.batch_size = 8
+        self.global_step = tf.Variable(0)
 
         self.inp = tf.placeholder(tf.float32, shape=[None, img_size[0], img_size[1], 3], name='input_images')
         self.labels = tf.placeholder(dtype=tf.int8, shape=[None, img_size[0], img_size[1]], name='labels')
@@ -37,8 +39,16 @@ class Tiramisu:
         Optimizer
         :return:
         """
-        return tf.train.RMSPropOptimizer(learning_rate=self.lr, decay=0.995).minimize(self.loss)
-
+        #learning_rate = tf.train.cosine_decay(
+        #                              learning_rate=0.1,
+        #                              global_step=self.global_step,
+        #                              decay_steps=1000,
+        #                              alpha=0.001,
+        #                              name='lr_decay')
+        
+        return tf.train.GradientDescentOptimizer(learning_rate = self.lr).\
+                        minimize(self.loss, global_step=self.global_step)
+        
     def get_loss(self):
         """
         Loss
@@ -162,6 +172,7 @@ class Tiramisu:
         :param num_epochs:
         :return:
         """
+        self.batch_size = batch_size
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
 
@@ -196,7 +207,7 @@ class Tiramisu:
                                                 batch_size=batch_size,
                                                 shape=[128, 128],
                                                 padding=[13, 14, 13, 14],
-                                                flip=True),
+                                                flip=False),
                                             ascii=True, unit=' batch'):
                     _, l = sess.run([self.optimizer, self.loss], feed_dict={self.inp: images, self.labels: mask})
                     loss.append(l)
@@ -226,8 +237,7 @@ class Tiramisu:
                     s /= cnt
                 except ZeroDivisionError:
                     s = 0.0
-                print(s)    
-
+                print(s)
                 summary = tf.Summary()
                 summary.value.add(tag='metrics/loss_mean', simple_value=np.array(loss).mean())
                 summary.value.add(tag='metrics/iou_mean', simple_value=iou_score)

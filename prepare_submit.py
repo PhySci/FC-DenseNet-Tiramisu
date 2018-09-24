@@ -49,4 +49,4 @@ def main(pth=None):
 
 
 if __name__ == '__main__':
-    main('./predictions')
+    main('./predictions2')
