@@ -4,7 +4,9 @@ import numpy as np
 import cv2
 
 class Fib:
-    '''iterator that yields numbers in the Fibonacci sequence'''
+    """
+    Image and mask generator
+    """
 
     def __init__(self, img_pth=None, mask_pth=None, batch_size=1, shape=None, padding=None, flip=False):
         """
@@ -47,7 +49,7 @@ class Fib:
         for i, file in enumerate(file_list):
             img = cv2.imread(os.path.join(self.img_pth, file), -1)
             if self.flip:
-                k = np.random.choice([0, 1, 2, 3], p=[0.4, 0.2, 0.2, 0.2])
+                k = np.random.choice([0, 1, 2, 3], p=[0.55, 0.15, 0.15, 0.15])
             else:
                 k = 0
             if self.padding is not None:
