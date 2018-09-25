@@ -103,9 +103,8 @@ class Tiramisu:
             stack = slim.conv2d(self.inp, n_filters_first_conv, [3, 3], scope='first_conv')
             n_filters = n_filters_first_conv
             # Downsampling path
-            skip_connection_list = []
             skip_connection_dict = {}
-            
+
             with tf.name_scope('downsampling'):      
                 for i in range(n_pool):
                     # Dense Block
@@ -113,12 +112,10 @@ class Tiramisu:
                                           scope='denseblock%d' % (i + 1))
                     n_filters += growth_rate * n_layers_per_block[i]
                     # At the end of the dense block, the current stack is stored in the skip_connections list
-                    skip_connection_list.append(stack)
                     skip_connection_dict.update({i: stack})
                     # Transition Down
                     stack = TransitionDown(stack, n_filters, dropout_p, scope='transitiondown%d' % (i + 1))
 
-            skip_connection_list = skip_connection_list[::-1]
             #     Bottleneck (Dense Block)
             with tf.name_scope('bottleneck'):
                 stack, block_to_upsample = DenseBlock(stack, n_layers_per_block[n_pool], growth_rate, dropout_p,
@@ -312,8 +309,8 @@ def DenseBlock(stack, n_layers, growth_rate, dropout_p, scope=None):
     :param stack: input 4D tensor
     :param n_layers: number of internal layers
     :param growth_rate: number of feature maps per internal layer
-    :param dropout_p: 
-    :param scope: 
+    :param dropout_p:
+    :param scope:
     :return: stack, new_features:  current stack of feature maps (4D tensor) and  4D tensor containing only the new feature maps generated
     """
     with tf.name_scope(scope) as sc:
