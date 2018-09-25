@@ -104,6 +104,7 @@ class Tiramisu:
             n_filters = n_filters_first_conv
             # Downsampling path
             skip_connection_list = []
+            skip_connection_dict = {}
             
             with tf.name_scope('downsampling'):      
                 for i in range(n_pool):
@@ -113,6 +114,7 @@ class Tiramisu:
                     n_filters += growth_rate * n_layers_per_block[i]
                     # At the end of the dense block, the current stack is stored in the skip_connections list
                     skip_connection_list.append(stack)
+                    skip_connection_dict.update({i: stack})
                     # Transition Down
                     stack = TransitionDown(stack, n_filters, dropout_p, scope='transitiondown%d' % (i + 1))
 
@@ -126,7 +128,7 @@ class Tiramisu:
                 for i in range(n_pool):
                     # Transition Up ( Upsampling + concatenation with the skip connection)
                     n_filters_keep = growth_rate * n_layers_per_block[n_pool + i]
-                    stack = TransitionUp(block_to_upsample, skip_connection_list[i], n_filters_keep,
+                    stack = TransitionUp(block_to_upsample, skip_connection_dict.get(n_pool-i), n_filters_keep,
                                          scope='transitionup%d' % (n_pool + i + 1))
 
                     # Dense Block
@@ -207,9 +209,8 @@ class Tiramisu:
 
         tf_metric, tf_metric_update = tf.metrics.mean_iou(self.labels, tf.argmax(self.graph, axis=3),
                                                           name="iou", num_classes=self.num_classes)
-        running_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope="iou")
-        running_vars_initializer = tf.variables_initializer(var_list=running_vars)
-
+        running_vars_initializer = tf.variables_initializer(var_list=
+                                                            tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope="iou"))
 
         with tf.Session(config=config) as sess:
             if repeat:
@@ -304,40 +305,27 @@ def preact_conv(inputs, n_filters, filter_size=[3, 3], dropout_p=0.2, scope='pre
         net = slim.conv2d(net, n_filters, filter_size, activation_fn=None, normalizer_fn=None, scope=sc)
         return slim.dropout(net, keep_prob=(1.0-dropout_p), scope=sc)
 
+
 def DenseBlock(stack, n_layers, growth_rate, dropout_p, scope=None):
-  """
-  DenseBlock for DenseNet and FC-DenseNet
-  Args:
-    stack: input 4D tensor
-    n_layers: number of internal layers
-    growth_rate: number of feature maps per internal layer
-  Returns:
-    stack: current stack of feature maps (4D tensor)
-    new_features: 4D tensor containing only the new feature maps generated
-      in this block
-  """
-  with tf.name_scope(scope) as sc:
-    new_features = []
-    for j in range(n_layers):
-        with tf.name_scope('layer_'+str(j)) as sc1:
-          layer = preact_conv(stack, growth_rate, dropout_p=dropout_p, scope='layer_'+str(j))
-          new_features.append(layer)
-          stack = tf.concat([stack, layer], axis=-1)
-    new_features = tf.concat(new_features, axis=-1)
-    return stack, new_features
+    """
+      DenseBlock for DenseNet and FC-DenseNet
+    :param stack: input 4D tensor
+    :param n_layers: number of internal layers
+    :param growth_rate: number of feature maps per internal layer
+    :param dropout_p: 
+    :param scope: 
+    :return: stack, new_features:  current stack of feature maps (4D tensor) and  4D tensor containing only the new feature maps generated
+    """
+    with tf.name_scope(scope) as sc:
+        new_features = []
+        for j in range(n_layers):
+            with tf.name_scope('layer_'+str(j)) as sc1:
+              layer = preact_conv(stack, growth_rate, dropout_p=dropout_p, scope='layer_'+str(j))
+              new_features.append(layer)
+              stack = tf.concat([stack, layer], axis=-1)
+        new_features = tf.concat(new_features, axis=-1)
+        return stack, new_features
 
-def TransitionLayer(inputs, n_filters, dropout_p=0.2, compression=1.0, scope=None):
-  """
-  Transition layer for DenseNet
-  Apply 1x1 BN  + conv then 2x2 max pooling
-  """
-  with tf.name_scope(scope):
-    if compression < 1.0:
-      n_filters = tf.to_int32(tf.floor(n_filters*compression))
-    l = preact_conv(inputs, n_filters, filter_size=[1, 1], dropout_p=dropout_p)
-    l = slim.pool(l, [2, 2], stride=[2, 2], pooling_type='AVG')
-
-    return l
 
 def TransitionDown(inputs, n_filters, dropout_p=0.2, scope=None):
   """
@@ -348,6 +336,7 @@ def TransitionDown(inputs, n_filters, dropout_p=0.2, scope=None):
     l = preact_conv(inputs, n_filters, filter_size=[1, 1], dropout_p=dropout_p)
     l = slim.pool(l, [2, 2], stride=[2, 2], pooling_type='MAX')
     return l
+
 
 def TransitionUp(block_to_upsample, skip_connection, n_filters_keep, scope=None):
   """
