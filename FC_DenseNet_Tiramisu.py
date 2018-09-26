@@ -43,13 +43,13 @@ class Tiramisu:
         """
         with tf.name_scope('optimizer'):
             learning_rate = tf.train.cosine_decay(
-                                          learning_rate=0.1,
+                                          learning_rate=self.lr,
                                           global_step=self.global_step,
                                           decay_steps=20000,
-                                          alpha=0.001,
+                                          alpha=0.1*self.lr,
                                           name='lr_decay')
 
-            return tf.train.GradientDescentOptimizer(learning_rate = learning_rate).\
+            return tf.train.AdamOptimizer(learning_rate = self.lr).\
                             minimize(self.loss, global_step=self.global_step)
         
     def get_loss(self):
@@ -97,7 +97,7 @@ class Tiramisu:
             raise ValueError
 
         # convert mask
-        with tf.variable_scope('Tiramisu'):
+        with tf.variable_scope('Tiramisu') as sc:
             # First Convolution (we perform a first convolution).
             stack = slim.conv2d(self.inp, n_filters_first_conv, [3, 3], scope='first_conv')
             n_filters = n_filters_first_conv
@@ -124,7 +124,7 @@ class Tiramisu:
                 for i in range(n_pool):
                     # Transition Up ( Upsampling + concatenation with the skip connection)
                     n_filters_keep = growth_rate * n_layers_per_block[n_pool + i]
-                    stack = self.TransitionUp(block_to_upsample, skip_connection_dict.get(n_pool-i), n_filters_keep,
+                    stack = self.TransitionUp(block_to_upsample, skip_connection_dict.get(n_pool-i-1), n_filters_keep,
                                          scope='transitionup%d' % (n_pool + i + 1))
 
                     # Dense Block
@@ -146,7 +146,6 @@ class Tiramisu:
         :return:
         """
 
-        self.is_training = False
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
         sess = tf.Session(config=config)
@@ -168,15 +167,15 @@ class Tiramisu:
                                              padding=[13, 14, 13, 14],
                                              flip=False)):
 
-            feed_dict = {self.inp: images,
-                         self.is_training: False}
-            out = sess.run(tf.argmax(self.graph, axis=3), feed_dict=feed_dict)
+            out = sess.run(self.graph, feed_dict={self.inp: images,                                                                self.is_training: False})
+            
+            answ = np.argmax(out, axis=3)
 
             for fi, file in enumerate(file_list):
                 file_name, ext = os.path.splitext(file)
                 if to_rlc:
                     s = file_name+','
-                    arr = out[fi, 13:-14, 13:-14]
+                    arr = answ[fi, 13:-14, 13:-14]
                     arr = arr.flatten(order='F')
                     arr = np.insert(arr, 0, 0)
                     arr = np.append(arr, 0)
@@ -213,7 +212,7 @@ class Tiramisu:
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
 
-        saver = tf.train.Saver(max_to_keep=1000)
+        saver = tf.train.Saver(max_to_keep=100)
 
         tf_metric, tf_metric_update = tf.metrics.mean_iou(self.labels, tf.argmax(self.graph, axis=3),
                                                           name="iou", num_classes=self.num_classes)
@@ -228,7 +227,7 @@ class Tiramisu:
 
             train_writer = tf.summary.FileWriter('./train/'+datetime.datetime.now().strftime("%Y-%m-%d-%H-%M"),
                                                  sess.graph)
-            
+             
             print("***** Begin training *****")
             avg_loss_per_epoch = []
             # Do the training here
@@ -260,14 +259,18 @@ class Tiramisu:
                                  self.labels: mask,
                                  self.is_training: False}
                     _, cn = sess.run([tf_metric_update, self.metric], feed_dict=feed_dict)
+                    
+                    summary_op = tf.summary.image("plot", images)
                      
                     for el in list(cn):
                         count[el] +=1 
                                              
-                iou_score = sess.run(tf_metric)
+                iou_score, merge = sess.run([tf_metric, tf.summary.merge_all()], feed_dict=feed_dict)
                 print("Mean IoU score: ", iou_score)
                 print(count)
                        
+                    
+                    
                 s = 0.0
                 cnt = 0                              
                 for key, value in count.items():
@@ -280,11 +283,11 @@ class Tiramisu:
                 except ZeroDivisionError:
                     s = 0.0
                 print(s)
-                summary = tf.Summary()
-                summary.value.add(tag='metrics/loss_mean', simple_value=np.array(loss).mean())
-                summary.value.add(tag='metrics/iou_mean', simple_value=iou_score)
-                summary.value.add(tag='metrics/metric1', simple_value=s)
-                train_writer.add_summary(summary, epoch)
+                stats = tf.Summary()
+                stats.value.add(tag='metrics/loss_mean', simple_value=np.array(loss).mean())
+                stats.value.add(tag='metrics/iou_mean', simple_value=iou_score)
+                stats.value.add(tag='metrics/metric1', simple_value=s)
+                train_writer.add_summary(stats, epoch)
                 
                 # Create directories if needed
                 if not os.path.isdir("%s/%04d" % ("checkpoints", epoch)):
