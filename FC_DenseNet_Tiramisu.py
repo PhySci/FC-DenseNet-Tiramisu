@@ -26,7 +26,8 @@ class Tiramisu:
         self.dropout_p = dropout_p
         self.lr = lr
         self.batch_size = 8
-        self.global_step = tf.Variable(0)
+        self.global_step = tf.Variable(0, dtype=tf.int8, name='global_step', trainable=False)
+        self.is_training = tf.Variable(False, dtype=tf.bool, name='is_training', trainable=False)
 
         self.inp = tf.placeholder(tf.float32, shape=[None, img_size[0], img_size[1], 3], name='input_images')
         self.labels = tf.placeholder(dtype=tf.int8, shape=[None, img_size[0], img_size[1]], name='labels')
@@ -70,12 +71,10 @@ class Tiramisu:
         :param n_pool: number of pooling layers = number of transition down = number of transition up
         :param growth_rate: number of new feature maps created by each layer in a dense block
         :param n_layers_per_block: number of layers per block. Can be an int or a list of size 2 * n_pool + 1
-        :param dropout_p: dropout rate applied after each convolution (0. for not using)
         :param scope:
         :return:
         """
         n_filters_first_conv = 48
-        dropout_p = 0.2
 
         if self.preset_model == 'FC-DenseNet56':
             n_pool = 5
@@ -98,7 +97,7 @@ class Tiramisu:
             raise ValueError
 
         # convert mask
-        with tf.variable_scope('Tiramisu') as sc:
+        with tf.variable_scope('Tiramisu'):
             # First Convolution (we perform a first convolution).
             stack = slim.conv2d(self.inp, n_filters_first_conv, [3, 3], scope='first_conv')
             n_filters = n_filters_first_conv
@@ -108,36 +107,46 @@ class Tiramisu:
             with tf.name_scope('downsampling'):      
                 for i in range(n_pool):
                     # Dense Block
-                    stack, _ = DenseBlock(stack, n_layers_per_block[i], growth_rate, dropout_p,
-                                          scope='denseblock%d' % (i + 1))
+                    stack, _ = self.DenseBlock(stack, n_layers_per_block[i], growth_rate,
+                                               scope='denseblock%d' % (i + 1))
                     n_filters += growth_rate * n_layers_per_block[i]
                     # At the end of the dense block, the current stack is stored in the skip_connections list
                     skip_connection_dict.update({i: stack})
                     # Transition Down
-                    stack = TransitionDown(stack, n_filters, dropout_p, scope='transitiondown%d' % (i + 1))
+                    stack = self.TransitionDown(stack, n_filters, scope='transitiondown%d' % (i + 1))
 
             #     Bottleneck (Dense Block)
             with tf.name_scope('bottleneck'):
-                stack, block_to_upsample = DenseBlock(stack, n_layers_per_block[n_pool], growth_rate, dropout_p,
-                                                      scope='denseblock%d' % (n_pool + 1))
+                stack, block_to_upsample = self.DenseBlock(stack, n_layers_per_block[n_pool], growth_rate,
+                                                           scope='denseblock%d' % (n_pool + 1))
             #   Upsampling path   #
             with tf.name_scope('upsampling'):      
                 for i in range(n_pool):
                     # Transition Up ( Upsampling + concatenation with the skip connection)
                     n_filters_keep = growth_rate * n_layers_per_block[n_pool + i]
-                    stack = TransitionUp(block_to_upsample, skip_connection_dict.get(n_pool-i), n_filters_keep,
+                    stack = self.TransitionUp(block_to_upsample, skip_connection_dict.get(n_pool-i), n_filters_keep,
                                          scope='transitionup%d' % (n_pool + i + 1))
 
                     # Dense Block
                     # We will only upsample the new feature maps
-                    stack, block_to_upsample = DenseBlock(stack, n_layers_per_block[n_pool + i + 1], growth_rate, dropout_p,
-                                                          scope='denseblock%d' % (n_pool + i + 2))
+                    stack, block_to_upsample = self.DenseBlock(stack, n_layers_per_block[n_pool + i + 1], growth_rate,
+                                                               scope='denseblock%d' % (n_pool + i + 2))
 
             #      Softmax
             net = slim.conv2d(stack, self.num_classes, [1, 1], scope='logits')
             return net
 
     def predict(self, test_pth=None, save_pth=None, to_img=False, to_rlc=True):
+        """
+
+        :param test_pth:
+        :param save_pth:
+        :param to_img:
+        :param to_rlc:
+        :return:
+        """
+
+        self.is_training = False
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
         sess = tf.Session(config=config)
@@ -158,8 +167,10 @@ class Tiramisu:
                                              shape=[128, 128],
                                              padding=[13, 14, 13, 14],
                                              flip=False)):
-            
-            out = sess.run(tf.argmax(self.graph, axis=3), feed_dict={self.inp: images})
+
+            feed_dict = {self.inp: images,
+                         self.is_training: False}
+            out = sess.run(tf.argmax(self.graph, axis=3), feed_dict=feed_dict)
 
             for fi, file in enumerate(file_list):
                 file_name, ext = os.path.splitext(file)
@@ -234,7 +245,10 @@ class Tiramisu:
                                                 padding=[13, 14, 13, 14],
                                                 flip=True),
                                             ascii=True, unit=' batch'):
-                    _, l = sess.run([self.optimizer, self.loss], feed_dict={self.inp: images, self.labels: mask})
+                    feed_dict = {self.inp: images,
+                                 self.labels: mask,
+                                 self.is_training: True}
+                    _, l = sess.run([self.optimizer, self.loss], feed_dict=feed_dict)
                     loss.append(l)
 
                 for images, mask, _ in tqdm(Fib(img_pth='./soil/val/images', mask_pth='./soil/val/masks',
@@ -242,7 +256,10 @@ class Tiramisu:
                                                 padding=[13, 14, 13, 14],
                                                 flip=False),
                                             ascii=True, unit='batch'):
-                    _, cn = sess.run([tf_metric_update, self.metric], feed_dict={self.inp: images, self.labels: mask})
+                    feed_dict = {self.inp: images,
+                                 self.labels: mask,
+                                 self.is_training: False}
+                    _, cn = sess.run([tf_metric_update, self.metric], feed_dict=feed_dict)
                      
                     for el in list(cn):
                         count[el] +=1 
@@ -276,6 +293,54 @@ class Tiramisu:
                 saver.save(sess, "%s/latest_model.ckpt" % "checkpoints")
                 saver.save(sess, "%s/%04d/model.ckpt" % ("checkpoints", epoch))
 
+    def preact_conv(self, inputs, n_filters, filter_size=[3, 3], scope='preactivation'):
+        """
+        Basic pre-activation layer for DenseNets
+        Apply successivly BatchNormalization, ReLU nonlinearity, Convolution and
+        """
+        with tf.name_scope('preactivation_'+scope) as sc:
+            net = tf.nn.relu(slim.batch_norm(inputs, scope=sc))
+            net = slim.conv2d(net, n_filters, filter_size, activation_fn=None, normalizer_fn=None, scope=sc)
+            return slim.dropout(net, keep_prob=(1.0-self.dropout_p), scope=sc, is_training=self.is_training)
+
+    def DenseBlock(self, stack, n_layers, growth_rate, scope=None):
+        """
+          DenseBlock for DenseNet and FC-DenseNet
+        :param stack: input 4D tensor
+        :param n_layers: number of internal layers
+        :param growth_rate: number of feature maps per internal layer
+        :param scope:
+        :return: stack, new_features:  current stack of feature maps (4D tensor) and  4D tensor containing only the new feature maps generated
+        """
+        with tf.name_scope(scope) as sc:
+            new_features = []
+            for j in range(n_layers):
+                with tf.name_scope('layer_' + str(j)) as sc1:
+                    layer = self.preact_conv(stack, growth_rate, scope='layer_' + str(j))
+                    new_features.append(layer)
+                    stack = tf.concat([stack, layer], axis=-1)
+            new_features = tf.concat(new_features, axis=-1)
+            return stack, new_features
+
+    def TransitionDown(self, inputs, n_filters, scope=None):
+        """
+        Transition Down (TD) for FC-DenseNet
+        Apply 1x1 BN + ReLU + conv then 2x2 max pooling
+        """
+        with tf.name_scope(scope):
+            l = self.preact_conv(inputs, n_filters, filter_size=[1, 1])
+            l = slim.pool(l, [2, 2], stride=[2, 2], pooling_type='MAX')
+            return l
+
+    def TransitionUp(self, block_to_upsample, skip_connection, n_filters_keep, scope=None):
+        """
+        Transition Up for FC-DenseNet
+        Performs upsampling on block_to_upsample by a factor 2 and concatenates it with the skip_connection
+        """
+        with tf.name_scope(scope) as sc:
+            l = slim.conv2d_transpose(block_to_upsample, n_filters_keep, kernel_size=[3, 3], stride=[2, 2],
+                                      scope=sc)
+            return tf.concat([l, skip_connection], axis=-1)
 
 def get_mask(mask, n_classes):
     """
@@ -291,55 +356,6 @@ def get_mask(mask, n_classes):
             msk_list.append(cls_msk)
         return tf.transpose(tf.stack(values=msk_list, axis=0, name='concat'), perm=[1, 2, 3, 0])
 
-def preact_conv(inputs, n_filters, filter_size=[3, 3], dropout_p=0.2, scope='preactivation'):
-    """
-    Basic pre-activation layer for DenseNets
-    Apply successivly BatchNormalization, ReLU nonlinearity, Convolution and
-    Dropout (if dropout_p > 0) on the inputs
-    """
-    with tf.name_scope('preactivation_'+scope) as sc:
-        net = tf.nn.relu(slim.batch_norm(inputs, scope=sc))
-        net = slim.conv2d(net, n_filters, filter_size, activation_fn=None, normalizer_fn=None, scope=sc)
-        return slim.dropout(net, keep_prob=(1.0-dropout_p), scope=sc)
 
 
-def DenseBlock(stack, n_layers, growth_rate, dropout_p, scope=None):
-    """
-      DenseBlock for DenseNet and FC-DenseNet
-    :param stack: input 4D tensor
-    :param n_layers: number of internal layers
-    :param growth_rate: number of feature maps per internal layer
-    :param dropout_p:
-    :param scope:
-    :return: stack, new_features:  current stack of feature maps (4D tensor) and  4D tensor containing only the new feature maps generated
-    """
-    with tf.name_scope(scope) as sc:
-        new_features = []
-        for j in range(n_layers):
-            with tf.name_scope('layer_'+str(j)) as sc1:
-              layer = preact_conv(stack, growth_rate, dropout_p=dropout_p, scope='layer_'+str(j))
-              new_features.append(layer)
-              stack = tf.concat([stack, layer], axis=-1)
-        new_features = tf.concat(new_features, axis=-1)
-        return stack, new_features
 
-
-def TransitionDown(inputs, n_filters, dropout_p=0.2, scope=None):
-  """
-  Transition Down (TD) for FC-DenseNet
-  Apply 1x1 BN + ReLU + conv then 2x2 max pooling
-  """
-  with tf.name_scope(scope):
-    l = preact_conv(inputs, n_filters, filter_size=[1, 1], dropout_p=dropout_p)
-    l = slim.pool(l, [2, 2], stride=[2, 2], pooling_type='MAX')
-    return l
-
-
-def TransitionUp(block_to_upsample, skip_connection, n_filters_keep, scope=None):
-  """
-  Transition Up for FC-DenseNet
-  Performs upsampling on block_to_upsample by a factor 2 and concatenates it with the skip_connection
-  """
-  with tf.name_scope(scope) as sc:
-    l = slim.conv2d_transpose(block_to_upsample, n_filters_keep, kernel_size=[3, 3], stride=[2, 2], scope=sc)
-    return tf.concat([l, skip_connection], axis=-1)
