@@ -29,7 +29,7 @@ class Tiramisu:
         self.global_step = tf.Variable(0, dtype=tf.int8, name='global_step', trainable=False)
         self.is_training = tf.Variable(False, dtype=tf.bool, name='is_training', trainable=False)
 
-        self.inp = tf.placeholder(tf.float32, shape=[None, img_size[0], img_size[1], 3], name='input_images')
+        self.inp = tf.placeholder(tf.float32, shape=[None, img_size[0], img_size[1], 1], name='input_images')
         self.labels = tf.placeholder(dtype=tf.int8, shape=[None, img_size[0], img_size[1]], name='labels')
         self.graph = self.get_graph()
         self.loss = self.get_loss()
@@ -167,7 +167,7 @@ class Tiramisu:
                                              padding=[13, 14, 13, 14],
                                              flip=False)):
 
-            out = sess.run(self.graph, feed_dict={self.inp: images,                                                                self.is_training: False})
+            out = sess.run(self.graph, feed_dict={self.inp: images, self.is_training: False})
             
             answ = np.argmax(out, axis=3)
 
