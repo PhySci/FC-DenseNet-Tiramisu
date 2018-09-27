@@ -152,8 +152,7 @@ class Tiramisu:
         sess.run(tf.global_variables_initializer())
         print('Loaded latest model checkpoint')
         saver = tf.train.Saver(max_to_keep=1000)
-        saver.restore(sess, "checkpoints/latest_model.ckpt")
-        fid = open("Output.txt", "w")
+        saver.restore(sess, "checkpoints/0040/model.ckpt")
         print('id,rle_mask', file=fid)
         print("***** Begin prediction *****")
 
@@ -302,7 +301,7 @@ class Tiramisu:
         Apply successivly BatchNormalization, ReLU nonlinearity, Convolution and
         """
         with tf.name_scope('preactivation_'+scope) as sc:
-            net = tf.nn.relu(slim.batch_norm(inputs, scope=sc))
+            net = tf.nn.elu(slim.batch_norm(inputs, scope=sc))
             net = slim.conv2d(net, n_filters, filter_size, activation_fn=None, normalizer_fn=None, scope=sc)
             return slim.dropout(net, keep_prob=(1.0-self.dropout_p), scope=sc, is_training=self.is_training)
 

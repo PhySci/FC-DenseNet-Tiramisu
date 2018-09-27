@@ -70,7 +70,7 @@ class Fib:
             raise StopIteration
         self.i +=1
 
-        return images[:, :, :, 0], mask, file_list
+        return images[:, :, :, 0:1], mask, file_list
 
     @staticmethod
     def augment_img(img, k):
