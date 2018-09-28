@@ -7,6 +7,7 @@ from gen import Fib
 import datetime
 from tqdm import tqdm
 import re
+from PIL import Image
 from collections import Counter
 
 class Tiramisu:
@@ -152,8 +153,7 @@ class Tiramisu:
         sess.run(tf.global_variables_initializer())
         print('Loaded latest model checkpoint')
         saver = tf.train.Saver(max_to_keep=1000)
-        saver.restore(sess, "checkpoints/0040/model.ckpt")
-        print('id,rle_mask', file=fid)
+        saver.restore(sess, "checkpoints/latest_model.ckpt")
         print("***** Begin prediction *****")
 
         if to_rlc:
@@ -188,6 +188,42 @@ class Tiramisu:
                         s += str(v[id, 0]) + ' ' + str(v[id, 1]) + ' '
                     print(s, file=fid)
 
+    def evaluate(self, val_pth=None, batch_size=8):
+        """
+        Evaluation method to estimate quality of predictions and find bottleneck
+        :param val_pth:
+        :return:
+        """
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        sess = tf.Session(config=config)
+        sess.run(tf.global_variables_initializer())
+        print('Loaded latest model checkpoint')
+        saver = tf.train.Saver()
+        saver.restore(sess, "checkpoints/latest_model.ckpt")
+        print("***** Begin prediction *****")
+
+        for images, mask, file_list in Fib(img_pth='./soil/val/images',
+                                                mask_pth='./soil/val/masks',
+                                                batch_size=8,
+                                                shape=[128, 128],
+                                                padding=[13, 14, 13, 14],
+                                                flip=False):
+
+            feed_dict = {self.inp: images,
+                         self.labels: mask,
+                         self.is_training: False}
+            
+            pr_mask, cn = sess.run([self.graph, self.metric], feed_dict=feed_dict)
+            
+            pr_mask = np.argmax(pr_mask, axis=3)
+            
+            for i, (sc, file) in enumerate(zip(cn, file_list)):
+                img = Image.fromarray(pr_mask[i, :, :], mode='1')
+                img.save(os.path.join('./soil/val/predictions', str(sc) + file))
+
+
+
     def get_custom_metric(self):
         with tf.name_scope('custom_metric'):      
             mask1 = tf.cast(self.labels, dtype=tf.bool, name='bool_mask1')
@@ -201,7 +237,7 @@ class Tiramisu:
             iou = tf.floor(iou*20)
             return iou/20.0
 
-    def train(self, num_epochs=2, batch_size=2, repeat=False):
+    def train(self, num_epochs=2, batch_size=2, repeat=False, train_pth='./soil/train'):
         """
         Train NN
         :param num_epochs:
@@ -236,26 +272,30 @@ class Tiramisu:
                 loss = []
                 sess.run(running_vars_initializer)
                 
-                for images, mask, _ in tqdm(Fib(img_pth='./soil/train/images',
-                                                mask_pth='./soil/train/masks',
+                for images, masks, _ in tqdm(Fib(img_pth=os.path.join(train_pth, 'images'),
+                                                mask_pth=os.path.join(train_pth, 'masks'),
                                                 batch_size=batch_size,
                                                 shape=[128, 128],
                                                 padding=[13, 14, 13, 14],
-                                                flip=True),
+                                                flip=False),
                                             ascii=True, unit=' batch'):
+                    
                     feed_dict = {self.inp: images,
-                                 self.labels: mask,
+                                 self.labels: masks,
                                  self.is_training: True}
+                    
+                    
                     _, l = sess.run([self.optimizer, self.loss], feed_dict=feed_dict)
                     loss.append(l)
 
-                for images, mask, _ in tqdm(Fib(img_pth='./soil/val/images', mask_pth='./soil/val/masks',
+                for images, masks, _ in tqdm(Fib(img_pth='./soil/val/images', mask_pth='./soil/val/masks',
                                                 batch_size=batch_size, shape=[128, 128],
                                                 padding=[13, 14, 13, 14],
                                                 flip=False),
                                             ascii=True, unit='batch'):
+                    
                     feed_dict = {self.inp: images,
-                                 self.labels: mask,
+                                 self.labels: masks,
                                  self.is_training: False}
                     _, cn = sess.run([tf_metric_update, self.metric], feed_dict=feed_dict)
                     
